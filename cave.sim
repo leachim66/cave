@@ -49,12 +49,9 @@ $HEIGHT 50 # the height of the cave in half character rows
 $full_block '@0x2588;'
 $upper_half_block '@0x2580;'
 $lower_half_block '@0x2584;'
-#$aeroplane '@0x2708;'
-#$spaceship '@0x270f;'
 $spaceship_head '@0x2326;'
 $spaceship_tail '@0x2327;'
-$spaceship string(spaceship_tail spaceship_head)
-$cannon '@0x2616;'
+$cannon '@0x25e2;'
 $star '@0x2726;'
 $single_vertical_bar '@0x2502;'
 $double_vertical_bar '@0x2551;'
@@ -74,6 +71,7 @@ $star_colour GREEN
 $spaceship_colour RED
 $beam_colour YELLOW
 $beam_cannon_colour ORANGE
+$cannon_colour RED
 
 $$dynamic_contents empty_list
 
@@ -91,16 +89,18 @@ $draw_vertical_bar:
   )
   $$y (top_y+1) >> 1 # in rows
   if top_y.is_even:
-    at x y
-    draw_character lower_half_block
+    set_text_colour_at x y BLACK
+    set_character_at x y lower_half_block
     inc &y
   repeat (bottom_y >> 1) - (top_y >> 1):
-    at x y
-    draw_character full_block
+    set_text_colour_at x y BLACK
+    set_character_at x y full_block
     inc &y
   if bottom_y.is_odd:
-    at x y
-    draw_character upper_half_block
+    set_text_colour_at x y BLACK
+    set_character_at x y upper_half_block
+
+$$prev_floor_y undefined
 
 $draw_cave_column:
   #
@@ -110,7 +110,6 @@ $draw_cave_column:
   )
   inc &cave_draw_x
 
-  set_text_colour BLACK
   draw_vertical_bar x 1 ceiling_y # draw the ceiling
   draw_vertical_bar x floor_y HEIGHT # draw the floor
 
@@ -120,23 +119,28 @@ $draw_cave_column:
   $y2 (floor_y-1 .div. 2)
 
   cond
-    -> cave_draw_x > 150 && next(&rng 40) == 24:
-      set_text_colour beam_cannon_colour
-      at x y1-1
-      draw_character double_vertical_bar
-      at x y2+1
-      draw_character double_vertical_bar
+    -> cave_draw_x > 300 && next(&rng 40) == 1:
+      set_text_colour_at x y1-1 beam_cannon_colour
+      set_character_at x y1-1 double_vertical_bar
+
+      set_text_colour_at x y2+1 beam_cannon_colour
+      set_character_at x y2+1 double_vertical_bar
+
       push &dynamic_contents
 	types::object
 	  .type_of LASER_BEAM
 	  .x_of cave_draw_x
 	  .y1_of y1
 	  .y2_of y2
+    -> cave_draw_x > 200 && next(&rng 20) == 14 && prev_floor_y >= floor_y:
+      set_text_colour_at x y2+1 cannon_colour
+      set_character_at x y2+1 cannon
     -> cave_draw_x > 100 && next(&rng 12) == 1:
       $star_y next(&rng y1..y2)
-      at x star_y
-      set_text_colour star_colour
-      draw_character star
+      set_text_colour_at x star_y star_colour
+      set_character_at x star_y star
+
+  !prev_floor_y floor_y
 
   # update the ceiling height
 
@@ -186,7 +190,7 @@ $$spaceship_y 13
 
     We start in the middle of the screen.
 
-$$cave_length 350
+$$cave_length 500
   #
     the total length of the cave
 
@@ -202,42 +206,72 @@ $draw_dynamic_contents:
   for_each dynamic_contents: (item)
     case type_of(item)
       LASER_BEAM:
-	if (cave_start_x .mod. 20) >= 10:
-	  set_text_colour beam_colour
+	if (cave_start_x .mod. 20) >= 15:
 	  $x x_of(item)-cave_start_x
 	  from_to y1_of(item) y2_of(item): (y)
-	    at x y
-	    draw_character single_vertical_bar
+	    set_text_colour_at x y beam_colour
+	    set_character_at x y single_vertical_bar
 
 $undraw_dynamic_contents:
   for_each dynamic_contents: (item)
     case type_of(item)
       LASER_BEAM:
-	if (cave_start_x .mod. 20) >= 10:
+	if (cave_start_x .mod. 20) >= 15:
 	  $x x_of(item)-cave_start_x
 	  from_to y1_of(item) y2_of(item): (y)
-	    at x y
-	    draw_character ' '
+	    set_character_at x y ' '
 
 $update_dynamic_contents:
   update_each &dynamic_contents: (&item)
     if x_of(item)-cave_start_x < 1:
       !item undefined # the item is no longer visible - delete it
 
+$$original_background_colours undefined
+
 $draw_spaceship
   #
     draws the spaceship
   :
-    at spaceship_x spaceship_y
-    set_text_colour spaceship_colour
-    draw_text spaceship
+    set_text_colour_at spaceship_x spaceship_y spaceship_colour
+    set_text_colour_at spaceship_x+1 spaceship_y spaceship_colour
+    set_character_at spaceship_x spaceship_y spaceship_tail
+    set_character_at spaceship_x+1 spaceship_y spaceship_head
+
+    $RX 8
+    $RY 4
+
+    $min_x max(spaceship_x-RX 1)
+    $max_x min(spaceship_x+RX+1 WIDTH)
+    $min_y max(spaceship_y-RY 1)
+    $max_y min(spaceship_y+RY HEIGHT)
+
+    !original_background_colours empty_list
+    from_to min_y max_y: (y)
+      $$background_colour_line empty_list
+      from_to min_x max_x: (x)
+	push &background_colour_line background_colour_at(x y)
+	set_background_colour_at x y '@0xe0e0e0;'
+      push &original_background_colours background_colour_line
 
 $undraw_spaceship
   #
     "undraws" the spaceship
   :
-    at spaceship_x spaceship_y
-    draw_text "  "
+    set_character_at spaceship_x spaceship_y ' '
+    set_character_at spaceship_x+1 spaceship_y ' '
+
+    $RX 8
+    $RY 4
+
+    $min_x max(spaceship_x-RX 1)
+    $max_x min(spaceship_x+RX+1 WIDTH)
+    $min_y max(spaceship_y-RY 1)
+    $max_y min(spaceship_y+RY HEIGHT)
+
+    from_to min_y max_y: (y)
+      $$background_colour_line original_background_colours(y-min_y+1)
+      from_to min_x max_x: (x)
+	set_background_colour_at x y background_colour_line(x-min_x+1)
 
 $draw_message
   #
