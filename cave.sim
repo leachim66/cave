@@ -68,7 +68,7 @@ $ORANGE    '@0xff8000;'
 $SKY_BLUE   '@0xc0c0ff;'
 
 $star_colour GREEN
-$spaceship_colour RED
+$spaceship_colour BLUE
 $beam_colour YELLOW
 $beam_cannon_colour ORANGE
 $cannon_colour RED
@@ -365,10 +365,7 @@ do: (-> break)
 	  :
 	    $a distance_to_exit
 	    $b 100-a
-	    $red round((a*0x20+b*0xc0)/100).to_integer
-	    $green round((a*0x20+b*0xc0)/100).to_integer
-	    $blue round((a*0x20+b*0xf0)/100).to_integer
-	    set_background_colour character(red << 16 | green << 8 | blue)
+	    set_background_colour colour_mixture(DARK_GREY = a SKY_BLUE = b)
       :
 	set_background_colour SKY_BLUE
     scroll_left # scroll the whole cave left by 1 character column
