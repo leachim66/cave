@@ -29,6 +29,15 @@
   This is by purpose only a skeleton of the game - waiting for *you* to develop
   it into a full fledged action game!
 
+# dynamic content types
+
+$LASER_BEAM .
+
+$type_of (!) # used for dynamic contents
+$x_of (!) # used for dynamic contents
+$y1_of (!) # used for dynamic contents
+$y2_of (!) # used for dynamic contents
+
 $WIDTH 80 # the width of the cave in character columns
 $HEIGHT 50 # the height of the cave in half character rows
 
@@ -47,9 +56,18 @@ $spaceship_tail '@0x2327;'
 $spaceship string(spaceship_tail spaceship_head)
 $cannon '@0x2616;'
 $star '@0x2726;'
+$single_vertical_bar '@0x2502;'
+$double_vertical_bar '@0x2551;'
 
-$BLACK '@0x000000;'
-$BLUE '@0x0000ff;'
+$BLACK   '@0x000000;'
+$GREY    '@0x808080;'
+$RED     '@0xff0000;'
+$GREEN   '@0x00ff00;'
+$BLUE    '@0x0000ff;'
+$YELLOW  '@0xffff00;'
+$ORANGE  '@0xff8000;'
+
+$$dynamic_contents empty_list
 
 $draw_vertical_bar:
   #
@@ -82,9 +100,35 @@ $draw_cave_column:
   (
     x # the column number on the screen
   )
+  inc &cave_draw_x
+
   set_text_colour BLACK
   draw_vertical_bar x 1 ceiling_y # draw the ceiling
   draw_vertical_bar x floor_y HEIGHT # draw the floor
+
+  # add dynamic content
+
+  $y1 (ceiling_y+1 .div. 2) + 1
+  $y2 (floor_y-1 .div. 2)
+
+  cond
+    -> cave_draw_x > 150 && next(&rng 40) == 24:
+      set_text_colour GREY
+      at x y1-1
+      draw_character double_vertical_bar
+      at x y2+1
+      draw_character double_vertical_bar
+      push &dynamic_contents
+	types::object
+	  .type_of LASER_BEAM
+	  .x_of cave_draw_x
+	  .y1_of y1
+	  .y2_of y2
+    -> cave_draw_x > 100 && next(&rng 12) == 1:
+      $star_y next(&rng y1..y2)
+      at x star_y
+      set_text_colour RED
+      draw_character star
 
   # update the ceiling height
 
@@ -106,16 +150,7 @@ $draw_cave_column:
     minus &ceiling_y delta # distribute the change to ceiling ...
     plus &floor_y delta # ... and floor
 
-  if cave_position > 100 && next(&rng 12) == 1:
-    $y1 (ceiling_y+1 .div. 2) + 1
-    $y2 (floor_y-1 .div. 2)
-    $star_y next(&rng y1..y2)
-    at x star_y
-    draw_character star
-
-  inc &cave_position
-
-$$rng mersenne_twister(4715)
+$$rng mersenne_twister(4711)
   #
     our pseudo random number generator
 
@@ -147,9 +182,39 @@ $$cave_length 300
   #
     the total length of the cave
 
-$$cave_position 1
+$$cave_draw_x 0
   #
-    the current drawing position within the cave
+    the current drawing position of the cave
+
+$$cave_start_x 0
+  #
+    the current display start position of the cave
+
+$draw_dynamic_contents:
+  for_each dynamic_contents: (item)
+    case type_of(item)
+      LASER_BEAM:
+	if (cave_start_x .mod. 20) >= 10:
+	  set_text_colour BLUE
+	  $x x_of(item)-cave_start_x
+	  from_to y1_of(item) y2_of(item): (y)
+	    at x y
+	    draw_character single_vertical_bar
+
+$undraw_dynamic_contents:
+  for_each dynamic_contents: (item)
+    case type_of(item)
+      LASER_BEAM:
+	if (cave_start_x .mod. 20) >= 10:
+	  $x x_of(item)-cave_start_x
+	  from_to y1_of(item) y2_of(item): (y)
+	    at x y
+	    draw_character ' '
+
+$update_dynamic_contents:
+  update_each &dynamic_contents: (&item)
+    if x_of(item)-cave_start_x < 1:
+      !item undefined # the item is no longer visible - delete it
 
 $draw_spaceship
   #
@@ -175,6 +240,7 @@ $draw_message
     )
     $len length_of(msg)
     at div((80-len) 2)+1 13
+    set_text_colour BLACK
     draw_text msg
 
 $a_collision_happened
@@ -211,20 +277,22 @@ do: # draw the initial view of the cave
   update_terminal # make all updates visible
   undraw_spaceship
 
-$$input_buffer ""
-  #
-    We use a maximum of one key per frame.
+# event loop
 
-    If the user pressed more keys then we keep a backlog.
+$$t current_time()
 
 do: (-> break)
   do_until:
-    wait_to $event READ_FROM=STDIN_FILENO TIMEOUT=0.08
+    plus &t 0.08
+    $timeout t-current_time()
+    wait_to $event READ_FROM=STDIN_FILENO TIMEOUT=timeout
       # we wait for a keystroke or until some time elapsed
 
-    case type_of(event)
+    $$input_buffer ""
+    case std::type_of(event)
       READ_FROM: # we got a keystroke
-	append &input_buffer read_from(STDIN_FILENO)
+	read_from STDIN_FILENO !input_buffer
+	sleep t-current_time()
 
     unless input_buffer.is_empty: # are there keys in the backlog buffer?
       case get(&input_buffer)
@@ -242,13 +310,17 @@ do: (-> break)
 
     # update the view of the cave
 
+    inc &cave_start_x
+
     scroll_left # scroll the whole cave left by 1 character column
 
     if
-      cave_position <= cave_length:
+      cave_draw_x <= cave_length:
 	draw_cave_column 80 # draw a new right-most character column
       :
-	inc &cave_position
+	inc &cave_draw_x
+
+    draw_dynamic_contents
 
     if a_collision_happened():
       draw_message "Your ship hit an obstacle!"
@@ -260,9 +332,12 @@ do: (-> break)
 
     update_terminal # make all updates visible
 
+    undraw_dynamic_contents
     undraw_spaceship # "undraw" the spaceship
 
-    -> cave_position+spaceship_x > cave_length+WIDTH
+    update_dynamic_contents
+
+    -> cave_draw_x+spaceship_x > cave_length+WIDTH
 
   draw_message "You survived!"
   update_terminal
