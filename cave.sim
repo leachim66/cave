@@ -59,13 +59,21 @@ $star '@0x2726;'
 $single_vertical_bar '@0x2502;'
 $double_vertical_bar '@0x2551;'
 
-$BLACK   '@0x000000;'
-$GREY    '@0x808080;'
-$RED     '@0xff0000;'
-$GREEN   '@0x00ff00;'
-$BLUE    '@0x0000ff;'
-$YELLOW  '@0xffff00;'
-$ORANGE  '@0xff8000;'
+$BLACK     '@0x000000;'
+$WHITE     '@0xffffff;'
+$GREY      '@0x808080;'
+$DARK_GREY '@0x202020;'
+$RED       '@0xff0000;'
+$GREEN     '@0x00ff00;'
+$BLUE      '@0x0000ff;'
+$YELLOW    '@0xffff00;'
+$ORANGE    '@0xff8000;'
+$SKY_BLUE   '@0xc0c0ff;'
+
+$star_colour GREEN
+$spaceship_colour RED
+$beam_colour YELLOW
+$beam_cannon_colour ORANGE
 
 $$dynamic_contents empty_list
 
@@ -113,7 +121,7 @@ $draw_cave_column:
 
   cond
     -> cave_draw_x > 150 && next(&rng 40) == 24:
-      set_text_colour GREY
+      set_text_colour beam_cannon_colour
       at x y1-1
       draw_character double_vertical_bar
       at x y2+1
@@ -127,7 +135,7 @@ $draw_cave_column:
     -> cave_draw_x > 100 && next(&rng 12) == 1:
       $star_y next(&rng y1..y2)
       at x star_y
-      set_text_colour RED
+      set_text_colour star_colour
       draw_character star
 
   # update the ceiling height
@@ -178,7 +186,7 @@ $$spaceship_y 13
 
     We start in the middle of the screen.
 
-$$cave_length 300
+$$cave_length 350
   #
     the total length of the cave
 
@@ -195,7 +203,7 @@ $draw_dynamic_contents:
     case type_of(item)
       LASER_BEAM:
 	if (cave_start_x .mod. 20) >= 10:
-	  set_text_colour BLUE
+	  set_text_colour beam_colour
 	  $x x_of(item)-cave_start_x
 	  from_to y1_of(item) y2_of(item): (y)
 	    at x y
@@ -221,7 +229,7 @@ $draw_spaceship
     draws the spaceship
   :
     at spaceship_x spaceship_y
-    set_text_colour BLUE
+    set_text_colour spaceship_colour
     draw_text spaceship
 
 $undraw_spaceship
@@ -241,6 +249,7 @@ $draw_message
     $len length_of(msg)
     at div((80-len) 2)+1 13
     set_text_colour BLACK
+    set_background_colour WHITE
     draw_text msg
 
 $a_collision_happened
@@ -252,7 +261,8 @@ $a_collision_happened
 	character_at(spaceship_x spaceship_y) != ' '
 	character_at(spaceship_x+1 spaceship_y) != ' '
 
-initialize_terminal # must be called before any other terminal function
+initialize_terminal BLACK DARK_GREY
+  # must be called before any other terminal function
 
 #
   We check for the standard terminal size.
@@ -312,7 +322,24 @@ do: (-> break)
 
     inc &cave_start_x
 
+    $distance_to_exit cave_length-cave_draw_x
+    if
+      distance_to_exit >= 0:
+	if
+	  distance_to_exit > 100:
+	    set_background_colour DARK_GREY
+	  :
+	    $a distance_to_exit
+	    $b 100-a
+	    $red round((a*0x20+b*0xc0)/100).to_integer
+	    $green round((a*0x20+b*0xc0)/100).to_integer
+	    $blue round((a*0x20+b*0xf0)/100).to_integer
+	    set_background_colour character(red << 16 | green << 8 | blue)
+      :
+	set_background_colour SKY_BLUE
     scroll_left # scroll the whole cave left by 1 character column
+
+    set_background_colour undefined
 
     if
       cave_draw_x <= cave_length:
@@ -351,6 +378,13 @@ do:
   restore_colours
   clear_screen
   cursor_on
+
+  # empty the input queue
+  wait_to $event READ_FROM=STDIN_FILENO TIMEOUT=0
+  case std::type_of(event)
+    READ_FROM: # we got a keystroke
+      read_from STDIN_FILENO $dummy
+
   get_terminal_attributes STDIN_FILENO $$attributes
   use_canonical_mode &attributes false
   echo_characters &attributes true
