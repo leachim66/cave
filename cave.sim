@@ -79,9 +79,11 @@ $YELLOW    '@0xffff00;'
 $ORANGE    '@0xff8000;'
 $SKY_BLUE   '@0xc0c0ff;'
 
+$spaceship_colour BLUE
+$fuel_tank_colour BLUE
+$fuel_tank_text_colour WHITE
 $star_colour GREEN
 $mine_colour DARK_GREY
-$spaceship_colour BLUE
 $beam_colour YELLOW
 $beam_cannon_colour ORANGE
 $cannon_colour RED
@@ -113,7 +115,51 @@ $draw_vertical_bar:
     set_text_colour_at x y BLACK
     set_character_at x y upper_half_block
 
+$$rng mersenne_twister(4711)
+  #
+    our pseudo random number generator
+
+    To change the cave just change the seed value.
+
+# initialize the ceiling and floor coordinates of the cave
+
+$$ceiling_y next(&rng 20)+1
+  #
+    the height of the cave's ceiling - initialized with a random value
+
+$$floor_y CAVE_HEIGHT+1-next(&rng 21)
+  #
+    the height of the cave's floor - initialized with a random value
+
+$$spaceship_x 1
+  #
+    the horizontal position (column) of the spaceship
+
+    We start in the leftmost column of the screen.
+
+$$spaceship_y 13
+  #
+    the vertical position (row) of the spaceship
+
+    We start in the middle of the screen.
+
+$$cave_length 600
+  #
+    the total length of the cave
+
+$$cave_draw_x 0
+  #
+    the current drawing position of the cave
+
+$$cave_start_x 0
+  #
+    the current display start position of the cave
+
+$$fuel 200
+
 $$prev_floor_y undefined
+$$prev_ceiling_y undefined
+$$next_fuel_tank_x 50
 
 $draw_cave_column:
   #
@@ -132,6 +178,22 @@ $draw_cave_column:
   $y2 (floor_y-1 .div. 2)
 
   cond
+    # fuels tanks
+    ->
+      &&
+	cave_draw_x >= next_fuel_tank_x
+	prev_ceiling_y < ceiling_y
+	next(&rng 7) == 1
+      :
+	set_text_colour_at x y1-1 BLACK
+	set_character_at x y1-1 full_block
+	set_background_colour_at x y1 fuel_tank_colour
+	set_text_colour_at x y1 fuel_tank_text_colour
+	set_character_at x y1 'F'
+	!next_fuel_tank_x cave_draw_x+20
+	minus &ceiling_y 3
+	extend_to &ceiling_y 2
+
     # laser beams
     -> cave_draw_x > 400 && cave_draw_x <= 500 && next(&rng 40) == 1:
       set_text_colour_at x y1-1 beam_cannon_colour
@@ -180,12 +242,13 @@ $draw_cave_column:
       set_text_colour_at x star_y star_colour
       set_character_at x star_y star
 
+  !prev_ceiling_y ceiling_y
   !prev_floor_y floor_y
 
   # update the ceiling height
 
   !ceiling_y ceiling_y+next(&rng 5)-3 # make a random change
-  extend_to &ceiling_y 1 # not too high
+  extend_to &ceiling_y 2 # not too high
   reduce_to &ceiling_y 35 # not too low
 
   # update the floor height
@@ -202,45 +265,16 @@ $draw_cave_column:
     minus &ceiling_y delta # distribute the change to ceiling ...
     plus &floor_y delta # ... and floor
 
-$$rng mersenne_twister(4711)
-  #
-    our pseudo random number generator
-
-    To change the cave just change the seed value.
-
-# initialize the ceiling and floor coordinates of the cave
-
-$$ceiling_y next(&rng 21)
-  #
-    the height of the cave's ceiling - initialized with a random value
-
-$$floor_y CAVE_HEIGHT+1-next(&rng 21)
-  #
-    the height of the cave's floor - initialized with a random value
-
-$$spaceship_x 1
-  #
-    the horizontal position (column) of the spaceship
-
-    We start in the leftmost column of the screen.
-
-$$spaceship_y 13
-  #
-    the vertical position (row) of the spaceship
-
-    We start in the middle of the screen.
-
-$$cave_length 600
-  #
-    the total length of the cave
-
-$$cave_draw_x 0
-  #
-    the current drawing position of the cave
-
-$$cave_start_x 0
-  #
-    the current display start position of the cave
+$draw_fuel:
+  at 1 1
+  set_background_colour BLACK
+  if
+    fuel > 0:
+      set_text_colour WHITE
+      draw_text "Fuel: @(pad_left(fuel 4))"
+    :
+      set_text_colour RED
+      draw_text "Out of fuel!"
 
 $draw_dynamic_contents:
   for_each dynamic_contents: (item)
@@ -375,20 +409,24 @@ $check_for_collision:
 
   $check: (x y)
     $chr character_at(x y)
-    if chr != ' ':
-      $$msg "crashed into the walls of the cave"
-      case chr
-	star: !msg "hit a floating star"
-	mine: !msg "hit a mine"
-	laser_beam: !msg "was hit by a laser beam"
-	laser_beamer: !msg "crashed into a laser beamer"
-	shot: !msg "was hit by the shot of a cannon"
-	cannon: !msg "crashed into a cannon"
+    if
+      chr == 'F': # refuel
+	plus &fuel 100
+      :
+	if chr != ' ':
+	  $$msg "crashed into the walls of the cave"
+	  case chr
+	    star: !msg "hit a floating star"
+	    mine: !msg "hit a mine"
+	    laser_beam: !msg "was hit by a laser beam"
+	    laser_beamer: !msg "crashed into a laser beamer"
+	    shot: !msg "was hit by the shot of a cannon"
+	    cannon: !msg "crashed into a cannon"
 
-      draw_message "Your ship @(msg)!"
-      update_terminal # make all updates visible
-      sleep 3 # wait for 3 seconds ...
-      terminate # and quit the game
+	  draw_message "Your ship @(msg)!"
+	  update_terminal # make all updates visible
+	  sleep 3 # wait for 3 seconds ...
+	  terminate # and quit the game
 
   check spaceship_x+1 spaceship_y
   check spaceship_x spaceship_y
@@ -437,27 +475,29 @@ at_exit:
 # draw welcome screen
 
 do:
-  at 32 3
-  draw_text "Welcome to CAVE!"
-  at 10 6
-  draw_text "an action game for console/terminal windows"
+  at 10 3
+  draw_text "
+		        Welcome to the CAVE!
 
-  at 10 9
-  draw_text "Try to survice and escape from the cave into the clear daylight!"
+	   (an action game for console/terminal windows)
 
-  at 25 11
-  draw_text "'w' or 'j': move shaceship up"
-  at 25 13
-  draw_text "'s' or 'n': move shaceship down"
-  at 25 15
-  draw_text "'a' or 'v': move shaceship backwards"
-  at 25 17
-  draw_text "'d' or 'b': move shaceship forwards"
-  at 25 19
-  draw_text "'q':        quit the game"
+    Try to survive and escape from the cave into the clear daylight!
 
-  at 25 23
-  draw_text "Press any key to start the game."
+    Avoid all obstacles but hit the fuel tanks to refuel your ship!
+
+
+		   'w' or 'j': move shaceship up
+
+		   's' or 'n': move shaceship down
+
+		   'a' or 'v': move shaceship backwards
+
+		   'd' or 'b': move shaceship forwards
+
+		   'q':        quit the game"
+
+
+		  Press any key to start the game.
 
   update_terminal
 
@@ -492,18 +532,30 @@ do: (-> break)
 	read_from STDIN_FILENO !input_buffer
 	sleep t-current_time()
 
+    if
+      fuel > 0:
+	dec &fuel
+      :
+	inc &spaceship_y # move the spaceship downwards
+
     unless input_buffer.is_empty: # are there keys in the backlog buffer?
       case get(&input_buffer)
 	'w', 'j':
-	  dec &spaceship_y # move the spaceship upwards
+	  if fuel >= 3:
+	    dec &spaceship_y # move the spaceship upwards
+	    minus &fuel 3
 	's', 'n':
-	  inc &spaceship_y # move the spaceship downwards
+	  if fuel >= 3:
+	    inc &spaceship_y # move the spaceship downwards
+	    minus &fuel 3
 	'a', 'v':
-	  if spaceship_x > 1:
+	  if spaceship_x > 1 && fuel >= 3:
 	    dec &spaceship_x # move the spaceship backwards
+	    minus &fuel 3
 	'd', 'b':
-	  if spaceship_x < WIDTH:
+	  if spaceship_x < WIDTH && fuel >= 3:
 	    inc &spaceship_x # move the spaceship forwards
+	    minus &fuel 3
 	'q': break # the user wants to quit the game
 
     # update the view of the cave
@@ -531,6 +583,8 @@ do: (-> break)
 	draw_cave_column 80 # draw a new right-most character column
       :
 	inc &cave_draw_x
+
+    draw_fuel
 
     draw_dynamic_contents
 
