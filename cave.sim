@@ -53,6 +53,7 @@ $spaceship_head '@0x2326;'
 $spaceship_tail '@0x2327;'
 $cannon '@0x25e2;'
 $star '@0x2726;'
+$mine '@0x2726;'
 $single_vertical_bar '@0x2502;'
 $double_vertical_bar '@0x2551;'
 
@@ -68,6 +69,7 @@ $ORANGE    '@0xff8000;'
 $SKY_BLUE   '@0xc0c0ff;'
 
 $star_colour GREEN
+$mine_colour DARK_GREY
 $spaceship_colour BLUE
 $beam_colour YELLOW
 $beam_cannon_colour ORANGE
@@ -119,7 +121,10 @@ $draw_cave_column:
   $y2 (floor_y-1 .div. 2)
 
   cond
-    -> cave_draw_x > 300 && next(&rng 40) == 1:
+    -> cave_draw_x > 400 && next(&rng 20) == 14 && prev_floor_y >= floor_y:
+      set_text_colour_at x y2+1 cannon_colour
+      set_character_at x y2+1 cannon
+    -> cave_draw_x > 300 && cave_draw_x <= 400 && next(&rng 40) == 1:
       set_text_colour_at x y1-1 beam_cannon_colour
       set_character_at x y1-1 double_vertical_bar
 
@@ -132,9 +137,10 @@ $draw_cave_column:
 	  .x_of cave_draw_x
 	  .y1_of y1
 	  .y2_of y2
-    -> cave_draw_x > 200 && next(&rng 20) == 14 && prev_floor_y >= floor_y:
-      set_text_colour_at x y2+1 cannon_colour
-      set_character_at x y2+1 cannon
+    -> cave_draw_x > 200 && next(&rng 12) == 1:
+      $mine_y next(&rng y1..y2)
+      set_text_colour_at x mine_y mine_colour
+      set_character_at x mine_y mine
     -> cave_draw_x > 100 && next(&rng 12) == 1:
       $star_y next(&rng y1..y2)
       set_text_colour_at x star_y star_colour
@@ -190,7 +196,7 @@ $$spaceship_y 13
 
     We start in the middle of the screen.
 
-$$cave_length 500
+$$cave_length 600
   #
     the total length of the cave
 
@@ -237,20 +243,34 @@ $draw_spaceship
     set_character_at spaceship_x spaceship_y spaceship_tail
     set_character_at spaceship_x+1 spaceship_y spaceship_head
 
-    $RX 8
-    $RY 4
+    # draw cone of light
 
-    $min_x max(spaceship_x-RX 1)
-    $max_x min(spaceship_x+RX+1 WIDTH)
-    $min_y max(spaceship_y-RY 1)
-    $max_y min(spaceship_y+RY HEIGHT)
+    $RX 20
+    $RY 5
+
+    $cx spaceship_x
+    $cy spaceship_y
+
+    $min_x cx
+    $max_x min(cx+RX WIDTH)
+    $min_y max(cy-RY 1)
+    $max_y min(cy+RY HEIGHT)
 
     !original_background_colours empty_list
     from_to min_y max_y: (y)
       $$background_colour_line empty_list
       from_to min_x max_x: (x)
-	push &background_colour_line background_colour_at(x y)
-	set_background_colour_at x y '@0xe0e0e0;'
+	$background_colour background_colour_at(x y)
+	push &background_colour_line background_colour
+	$dx x-cx
+	$dy 2*(y-cy)
+	if dx >= 2*abs(dy):
+	  $distance min(sqrt(dx*dx+dy*dy) RX)
+	  $lighting_colour
+	    colour_mixture
+	      GREY = RX-distance
+	      background_colour = distance
+	  set_background_colour_at x y lighting_colour
       push &original_background_colours background_colour_line
 
 $undraw_spaceship
@@ -260,13 +280,16 @@ $undraw_spaceship
     set_character_at spaceship_x spaceship_y ' '
     set_character_at spaceship_x+1 spaceship_y ' '
 
-    $RX 8
-    $RY 4
+    $RX 20
+    $RY 5
 
-    $min_x max(spaceship_x-RX 1)
-    $max_x min(spaceship_x+RX+1 WIDTH)
-    $min_y max(spaceship_y-RY 1)
-    $max_y min(spaceship_y+RY HEIGHT)
+    $cx spaceship_x
+    $cy spaceship_y
+
+    $min_x cx
+    $max_x min(cx+RX WIDTH)
+    $min_y max(cy-RY 1)
+    $max_y min(cy+RY HEIGHT)
 
     from_to min_y max_y: (y)
       $$background_colour_line original_background_colours(y-min_y+1)
@@ -307,7 +330,7 @@ initialize_terminal BLACK DARK_GREY
 if width_of(current_screen) != 80 || height_of(current_screen) != 25:
   Error "Please change your terminal size to 80x25!"
 
-do: # we initialize the terminal
+do: # initialize the terminal
   get_terminal_attributes STDIN_FILENO $$attributes
   use_canonical_mode &attributes false # we want no line-buffering ...
   echo_characters &attributes false # ... and no echoing of typed in characters
@@ -315,11 +338,33 @@ do: # we initialize the terminal
     Error "Failed to disable canonical input mode!"
   cursor_off # ... and we want no blinking cursor!
 
-do: # draw the initial view of the cave
-  from_to 1 WIDTH: (x) draw_cave_column x # fill all columns of the screen
-  draw_spaceship # draw the spaceship
-  update_terminal # make all updates visible
-  undraw_spaceship
+at_exit:
+  #
+    clean the screen and restore all changes we made to input buffering and
+    echoing
+
+  restore_colours
+  clear_screen
+  cursor_on
+
+  # empty the input queue
+  wait_to $event READ_FROM=STDIN_FILENO TIMEOUT=0
+  case std::type_of(event)
+    READ_FROM: # we got a keystroke
+      read_from STDIN_FILENO $dummy
+
+  get_terminal_attributes STDIN_FILENO $$attributes
+  use_canonical_mode &attributes false
+  echo_characters &attributes true
+  unless set_terminal_attributes(STDIN_FILENO attributes):
+    Error "Failed to reset input mode!"
+
+# draw the initial view of the cave
+
+from_to 1 WIDTH: (x) draw_cave_column x # fill all columns of the screen
+draw_spaceship # draw the spaceship
+update_terminal # make all updates visible
+undraw_spaceship
 
 # event loop
 
@@ -400,24 +445,3 @@ do: (-> break)
   draw_message "You survived!"
   update_terminal
   sleep 3
-
-do:
-  #
-    clean the screen and restore all changes we made to input buffering and
-    echoing
-
-  restore_colours
-  clear_screen
-  cursor_on
-
-  # empty the input queue
-  wait_to $event READ_FROM=STDIN_FILENO TIMEOUT=0
-  case std::type_of(event)
-    READ_FROM: # we got a keystroke
-      read_from STDIN_FILENO $dummy
-
-  get_terminal_attributes STDIN_FILENO $$attributes
-  use_canonical_mode &attributes false
-  echo_characters &attributes true
-  unless set_terminal_attributes(STDIN_FILENO attributes):
-    Error "Failed to reset input mode!"
