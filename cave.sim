@@ -31,15 +31,25 @@
 
 # dynamic content types
 
+$CANNON .
+$SHOT .
 $LASER_BEAM .
 
 $type_of (!) # used for dynamic contents
+$symbol_of (!) # used for dynamic contents
+$colour_of (!) # used for dynamic contents
+$frequence_of (!) # used for dynamic contents
+$tick_of (!) # used for dynamic contents
 $x_of (!) # used for dynamic contents
+$y_of (!) # used for dynamic contents
+$dx_of (!) # used for dynamic contents
+$dy_of (!) # used for dynamic contents
 $y1_of (!) # used for dynamic contents
 $y2_of (!) # used for dynamic contents
 
 $WIDTH 80 # the width of the cave in character columns
-$HEIGHT 50 # the height of the cave in half character rows
+$HEIGHT 25 # the height of the cave in character rows
+$CAVE_HEIGHT 2*HEIGHT # the height of the cave in half character rows
 
 #
   The height of a character is approximately about twice the size of its width.
@@ -54,8 +64,9 @@ $spaceship_tail '@0x2327;'
 $cannon '@0x25e2;'
 $star '@0x2726;'
 $mine '@0x2738;'
-$single_vertical_bar '@0x2502;'
-$double_vertical_bar '@0x2551;'
+$shot '\'
+$laser_beam '@0x2502;'
+$laser_beamer '@0x2551;'
 
 $BLACK     '@0x000000;'
 $WHITE     '@0xffffff;'
@@ -113,7 +124,7 @@ $draw_cave_column:
   inc &cave_draw_x
 
   draw_vertical_bar x 1 ceiling_y # draw the ceiling
-  draw_vertical_bar x floor_y HEIGHT # draw the floor
+  draw_vertical_bar x floor_y CAVE_HEIGHT # draw the floor
 
   # add dynamic content
 
@@ -121,15 +132,13 @@ $draw_cave_column:
   $y2 (floor_y-1 .div. 2)
 
   cond
-    -> cave_draw_x > 400 && next(&rng 20) == 14 && prev_floor_y >= floor_y:
-      set_text_colour_at x y2+1 cannon_colour
-      set_character_at x y2+1 cannon
-    -> cave_draw_x > 300 && cave_draw_x <= 400 && next(&rng 40) == 1:
+    # laser beams
+    -> cave_draw_x > 400 && cave_draw_x <= 500 && next(&rng 40) == 1:
       set_text_colour_at x y1-1 beam_cannon_colour
-      set_character_at x y1-1 double_vertical_bar
+      set_character_at x y1-1 laser_beamer
 
       set_text_colour_at x y2+1 beam_cannon_colour
-      set_character_at x y2+1 double_vertical_bar
+      set_character_at x y2+1 laser_beamer
 
       push &dynamic_contents
 	types::object
@@ -137,10 +146,35 @@ $draw_cave_column:
 	  .x_of cave_draw_x
 	  .y1_of y1
 	  .y2_of y2
+
+    # cannons
+    -> cave_draw_x > 300 && next(&rng 20) == 14 && prev_floor_y >= floor_y:
+      set_text_colour_at x y2+1 cannon_colour
+      set_character_at x y2+1 cannon
+
+      push &dynamic_contents
+	types::object
+	  .type_of CANNON
+	  .x_of cave_draw_x-1
+	  .y_of y2
+	  .dx_of -1
+	  .dy_of -1
+	  .symbol_of shot
+	  .colour_of YELLOW
+	  .frequence_of
+	    if
+	      cave_draw_x > 500
+	      -> 10
+	      -> 20
+	  .tick_of 0
+
+    # mines
     -> cave_draw_x > 200 && next(&rng 12) == 1:
       $mine_y next(&rng y1..y2)
       set_text_colour_at x mine_y mine_colour
       set_character_at x mine_y mine
+
+    # stars
     -> cave_draw_x > 100 && next(&rng 12) == 1:
       $star_y next(&rng y1..y2)
       set_text_colour_at x star_y star_colour
@@ -157,7 +191,7 @@ $draw_cave_column:
   # update the floor height
 
   !floor_y floor_y+next(&rng 5)-3 # make a random change
-  reduce_to &floor_y HEIGHT # not too low
+  reduce_to &floor_y CAVE_HEIGHT # not too low
   extend_to &floor_y 16 # not too high
 
   # check whether the cave would be too narrow
@@ -180,7 +214,7 @@ $$ceiling_y next(&rng 21)
   #
     the height of the cave's ceiling - initialized with a random value
 
-$$floor_y HEIGHT+1-next(&rng 21)
+$$floor_y CAVE_HEIGHT+1-next(&rng 21)
   #
     the height of the cave's floor - initialized with a random value
 
@@ -210,27 +244,53 @@ $$cave_start_x 0
 
 $draw_dynamic_contents:
   for_each dynamic_contents: (item)
+    $x x_of(item)-cave_start_x
     case type_of(item)
       LASER_BEAM:
 	if (cave_start_x .mod. 20) >= 15:
-	  $x x_of(item)-cave_start_x
 	  from_to y1_of(item) y2_of(item): (y)
 	    set_text_colour_at x y beam_colour
-	    set_character_at x y single_vertical_bar
+	    set_character_at x y laser_beam
+      SHOT:
+	$y y_of(item)
+	set_text_colour_at x y colour_of(item)
+	set_character_at x y symbol_of(item)
 
 $undraw_dynamic_contents:
   for_each dynamic_contents: (item)
+    $x x_of(item)-cave_start_x
     case type_of(item)
       LASER_BEAM:
 	if (cave_start_x .mod. 20) >= 15:
-	  $x x_of(item)-cave_start_x
 	  from_to y1_of(item) y2_of(item): (y)
 	    set_character_at x y ' '
+      SHOT:
+	$y y_of(item)
+	set_character_at x y ' '
 
 $update_dynamic_contents:
   update_each &dynamic_contents: (&item)
-    if x_of(item)-cave_start_x < 1:
-      !item undefined # the item is no longer visible - delete it
+    if
+      x_of(item) <= cave_start_x:
+	!item undefined # the item is no longer visible - delete it
+      :
+	case type_of(item)
+	  CANNON:
+	    inc &item.tick_of
+	    if tick_of(item) == frequence_of(item):
+	      !item
+		sequence
+		  item(.tick_of 0)
+		  item(.type_of SHOT)
+	  SHOT:
+	    $new_x x_of(item)+dx_of(item)
+	    $new_y y_of(item)+dy_of(item)
+	    if
+	      new_x > cave_start_x && character_at(new_x-cave_start_x new_y) == ' ':
+		!item.x_of new_x
+		!item.y_of new_y
+	      :
+		!item undefined # crashed into an obstacle
 
 $$original_background_colours undefined
 
@@ -320,8 +380,9 @@ $check_for_collision:
       case chr
 	star: !msg "hit a floating star"
 	mine: !msg "hit a mine"
-	single_vertical_bar: !msg "was hit by a laser beam"
-	double_vertical_bar: !msg "crashed into a laser beamer"
+	laser_beam: !msg "was hit by a laser beam"
+	laser_beamer: !msg "crashed into a laser beamer"
+	shot: !msg "was hit by the shot of a cannon"
 	cannon: !msg "crashed into a cannon"
 
       draw_message "Your ship @(msg)!"
