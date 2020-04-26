@@ -332,7 +332,7 @@ $check_for_collision:
   check spaceship_x+1 spaceship_y
   check spaceship_x spaceship_y
 
-initialize_terminal BLACK DARK_GREY
+initialize_terminal
   # must be called before any other terminal function
 
 #
@@ -372,6 +372,40 @@ at_exit:
   echo_characters &attributes true
   unless set_terminal_attributes(STDIN_FILENO attributes):
     Error "Failed to reset input mode!"
+
+# draw welcome screen
+
+do:
+  at 32 3
+  draw_text "Welcome to CAVE!"
+  at 10 6
+  draw_text "an action game for console/terminal windows"
+
+  at 10 9
+  draw_text "Try to survice and escape from the cave into the clear daylight!"
+
+  at 25 11
+  draw_text "'w' or 'j': move shaceship up"
+  at 25 13
+  draw_text "'s' or 'n': move shaceship down"
+  at 25 15
+  draw_text "'a' or 'v': move shaceship backwards"
+  at 25 17
+  draw_text "'d' or 'b': move shaceship forwards"
+  at 25 19
+  draw_text "'q':        quit the game"
+
+  at 25 23
+  draw_text "Press any key to start the game."
+
+  update_terminal
+
+  wait_to $event READ_FROM=STDIN_FILENO
+  read_from STDIN_FILENO $input_buffer
+
+  if input_buffer .has_prefix. 'q' terminate
+
+create_screen !std::current_screen BLACK DARK_GREY
 
 # draw the initial view of the cave
 
