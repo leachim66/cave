@@ -53,7 +53,7 @@ $spaceship_head '@0x2326;'
 $spaceship_tail '@0x2327;'
 $cannon '@0x25e2;'
 $star '@0x2726;'
-$mine '@0x2726;'
+$mine '@0x2738;'
 $single_vertical_bar '@0x2502;'
 $double_vertical_bar '@0x2551;'
 
@@ -309,14 +309,28 @@ $draw_message
     set_background_colour WHITE
     draw_text msg
 
-$a_collision_happened
+$check_for_collision:
   #
     checks whether the spaceship hit any obstacle
-  :
-    ->
-      ||
-	character_at(spaceship_x spaceship_y) != ' '
-	character_at(spaceship_x+1 spaceship_y) != ' '
+
+  $check: (x y)
+    $chr character_at(x y)
+    if chr != ' ':
+      $$msg "crashed into the walls of the cave"
+      case chr
+	star: !msg "hit a floating star"
+	mine: !msg "hit a mine"
+	single_vertical_bar: !msg "was hit by a laser beam"
+	double_vertical_bar: !msg "crashed into a laser beamer"
+	cannon: !msg "crashed into a cannon"
+
+      draw_message "Your ship @(msg)!"
+      update_terminal # make all updates visible
+      sleep 3 # wait for 3 seconds ...
+      terminate # and quit the game
+
+  check spaceship_x+1 spaceship_y
+  check spaceship_x spaceship_y
 
 initialize_terminal BLACK DARK_GREY
   # must be called before any other terminal function
@@ -385,14 +399,14 @@ do: (-> break)
 
     unless input_buffer.is_empty: # are there keys in the backlog buffer?
       case get(&input_buffer)
-	'w':
+	'w', 'j':
 	  dec &spaceship_y # move the spaceship upwards
-	's':
+	's', 'n':
 	  inc &spaceship_y # move the spaceship downwards
-	'a':
+	'a', 'v':
 	  if spaceship_x > 1:
 	    dec &spaceship_x # move the spaceship backwards
-	'd':
+	'd', 'b':
 	  if spaceship_x < WIDTH:
 	    inc &spaceship_x # move the spaceship forwards
 	'q': break # the user wants to quit the game
@@ -425,11 +439,7 @@ do: (-> break)
 
     draw_dynamic_contents
 
-    if a_collision_happened():
-      draw_message "Your ship hit an obstacle!"
-      update_terminal # make all updates visible
-      sleep 3 # wait for 3 seconds ...
-      break # ... and leave
+    check_for_collision
 
     draw_spaceship # draw the spaceship
 
