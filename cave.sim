@@ -377,11 +377,14 @@ $draw_message
     (
       msg # the message to draw
     )
-    rows_and_columns $rows $columns msg
-    at div((WIDTH-columns) 2)+1 13-div(rows 2)
     set_text_colour BLACK
     set_background_colour WHITE
-    draw_text msg
+    rows_and_columns $rows $columns msg
+    $$row 13-div(rows 2)
+    for_each_line msg: (line)
+      at div((WIDTH-length_of(line)) 2)+1 row
+      draw_text line
+      inc &row
 
 $hit_an_obstacle: (-> return)
   #
@@ -583,7 +586,7 @@ forever:
 	    if spaceship_x < WIDTH && fuel >= 3:
 	      inc &spaceship_x # move the spaceship forwards
 	      minus &fuel 3
-	  'q': break # the user wants to quit the game
+	  'q' terminate # the user wants to quit the game
 
       # update the view of the cave
 
