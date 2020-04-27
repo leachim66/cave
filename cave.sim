@@ -88,7 +88,22 @@ $beam_colour YELLOW
 $beam_cannon_colour ORANGE
 $cannon_colour RED
 
-$$dynamic_contents empty_list
+# for documentation of the following variables see the inialization section
+
+$$dynamic_contents undefined
+$$rng undefined
+$$ceiling_y undefined
+$$floor_y undefined
+$$spaceship_x undefined
+$$spaceship_y undefined
+$$cave_length undefined
+$$cave_draw_x undefined
+$$cave_start_x undefined
+$$fuel undefined
+$$next_fuel_tank_x undefined
+
+$$prev_floor_y undefined
+$$prev_ceiling_y undefined
 
 $draw_vertical_bar:
   #
@@ -114,52 +129,6 @@ $draw_vertical_bar:
   if bottom_y.is_odd:
     set_text_colour_at x y BLACK
     set_character_at x y upper_half_block
-
-$$rng mersenne_twister(4711)
-  #
-    our pseudo random number generator
-
-    To change the cave just change the seed value.
-
-# initialize the ceiling and floor coordinates of the cave
-
-$$ceiling_y next(&rng 20)+1
-  #
-    the height of the cave's ceiling - initialized with a random value
-
-$$floor_y CAVE_HEIGHT+1-next(&rng 21)
-  #
-    the height of the cave's floor - initialized with a random value
-
-$$spaceship_x 1
-  #
-    the horizontal position (column) of the spaceship
-
-    We start in the leftmost column of the screen.
-
-$$spaceship_y 13
-  #
-    the vertical position (row) of the spaceship
-
-    We start in the middle of the screen.
-
-$$cave_length 600
-  #
-    the total length of the cave
-
-$$cave_draw_x 0
-  #
-    the current drawing position of the cave
-
-$$cave_start_x 0
-  #
-    the current display start position of the cave
-
-$$fuel 200
-
-$$prev_floor_y undefined
-$$prev_ceiling_y undefined
-$$next_fuel_tank_x 50
 
 $draw_cave_column:
   #
@@ -390,6 +359,17 @@ $undraw_spaceship
       from_to min_x max_x: (x)
 	set_background_colour_at x y background_colour_line(x-min_x+1)
 
+$get_key: (timeout?)
+  $$options empty_list
+  if timeout.is_defined:
+    push &options TIMEOUT = timeout
+  wait_to $event READ_FROM=STDIN_FILENO options*
+  $$input_buffer ""
+  if
+    std::type_of(event) == READ_FROM # we got a keystroke
+    -> read_from(STDIN_FILENO)(1)
+    -> undefined
+
 $draw_message
   #
     draws a message in the center of the screen
@@ -397,13 +377,13 @@ $draw_message
     (
       msg # the message to draw
     )
-    $len length_of(msg)
-    at div((80-len) 2)+1 13
+    rows_and_columns $rows $columns msg
+    at div((WIDTH-columns) 2)+1 13-div(rows 2)
     set_text_colour BLACK
     set_background_colour WHITE
     draw_text msg
 
-$check_for_collision:
+$hit_an_obstacle: (-> return)
   #
     checks whether the spaceship hit any obstacle
 
@@ -423,13 +403,22 @@ $check_for_collision:
 	    shot: !msg "was hit by the shot of a cannon"
 	    cannon: !msg "crashed into a cannon"
 
-	  draw_message "Your ship @(msg)!"
+	  draw_message "
+	    Your ship @(msg)!
+
+	    Press 'c' to play again or 'q' to quit.
 	  update_terminal # make all updates visible
-	  sleep 3 # wait for 3 seconds ...
-	  terminate # and quit the game
+
+	  forever:
+	    get_key $key
+	    case key
+	      'c': return true
+	      'q' terminate # quit the game
 
   check spaceship_x+1 spaceship_y
   check spaceship_x spaceship_y
+
+  -> false
 
 initialize_terminal
   # must be called before any other terminal function
@@ -459,148 +448,192 @@ at_exit:
   restore_colours
   clear_screen
   cursor_on
-
-  # empty the input queue
-  wait_to $event READ_FROM=STDIN_FILENO TIMEOUT=0
-  case std::type_of(event)
-    READ_FROM: # we got a keystroke
-      read_from STDIN_FILENO $dummy
-
+  get_key $dummy 0 # empty the input queue
   get_terminal_attributes STDIN_FILENO $$attributes
   use_canonical_mode &attributes false
   echo_characters &attributes true
   unless set_terminal_attributes(STDIN_FILENO attributes):
     Error "Failed to reset input mode!"
 
-# draw welcome screen
+forever:
+  do: # draw welcome screen
+    create_screen !std::current_screen BLACK WHITE
 
-do:
-  at 10 3
-  draw_text "
-		        Welcome to the CAVE!
+    at 10 3
+    draw_text "
+			  Welcome to the CAVE!
 
-	   (an action game for console/terminal windows)
+	     (an action game for console/terminal windows)
 
-    Try to survive and escape from the cave into the clear daylight!
+      Try to survive and escape from the cave into the clear daylight!
 
-    Avoid all obstacles but hit the fuel tanks to refuel your ship!
+      Avoid all obstacles but hit the fuel tanks to refuel your ship!
 
 
-		   'w' or 'j': move shaceship up
+		  'w' or 'j': move shaceship up
 
-		   's' or 'n': move shaceship down
+		  's' or 'n': move shaceship down
 
-		   'a' or 'v': move shaceship backwards
+		  'a' or 'v': move shaceship backwards
 
-		   'd' or 'b': move shaceship forwards
+		  'd' or 'b': move shaceship forwards
 
-		   'q':        quit the game"
+		  'q':        quit the game
 
 
 		  Press any key to start the game.
 
-  update_terminal
+    update_terminal
 
-  wait_to $event READ_FROM=STDIN_FILENO
-  read_from STDIN_FILENO $input_buffer
+    get_key $key
 
-  if input_buffer .has_prefix. 'q' terminate
+    if key == 'q' terminate
 
-create_screen !std::current_screen BLACK DARK_GREY
+  !dynamic_contents empty_list
 
-# draw the initial view of the cave
+  !rng mersenne_twister(4711)
+    #
+      our pseudo random number generator
 
-from_to 1 WIDTH: (x) draw_cave_column x # fill all columns of the screen
-draw_spaceship # draw the spaceship
-update_terminal # make all updates visible
-undraw_spaceship
+      To change the cave just change the seed value.
 
-# event loop
+  # initialize the ceiling and floor coordinates of the cave
 
-$$t current_time()
+  !ceiling_y next(&rng 20)+1
+    #
+      the height of the cave's ceiling - initialized with a random value
 
-do: (-> break)
-  do_until:
-    plus &t 0.08
-    $timeout t-current_time()
-    wait_to $event READ_FROM=STDIN_FILENO TIMEOUT=timeout
-      # we wait for a keystroke or until some time elapsed
+  !floor_y CAVE_HEIGHT+1-next(&rng 21)
+    #
+      the height of the cave's floor - initialized with a random value
 
-    $$input_buffer ""
-    case std::type_of(event)
-      READ_FROM: # we got a keystroke
-	read_from STDIN_FILENO !input_buffer
+  !spaceship_x 1
+    #
+      the horizontal position (column) of the spaceship
+
+      We start in the leftmost column of the screen.
+
+  !spaceship_y 13
+    #
+      the vertical position (row) of the spaceship
+
+      We start in the middle of the screen.
+
+  !cave_length 600
+    #
+      the total length of the cave
+
+  !cave_draw_x 0
+    #
+      the current drawing position of the cave
+
+  !cave_start_x 0
+    #
+      the current display start position of the cave
+
+  !fuel 200
+    #
+      out spacesheep needs fuel - this is the initial amount
+
+  !next_fuel_tank_x 50
+    #
+      where is the next fuel tank?
+
+  create_screen !std::current_screen BLACK DARK_GREY
+
+  # draw the initial view of the cave
+
+  from_to 1 WIDTH: (x) draw_cave_column x # fill all columns of the screen
+  draw_spaceship # draw the spaceship
+  update_terminal # make all updates visible
+  undraw_spaceship
+
+  # event loop
+
+  $$t current_time()
+
+  do: (-> break)
+    do_until:
+      plus &t 0.08
+      $timeout t-current_time()
+      get_key $key timeout
+
+      if
+	fuel > 0:
+	  dec &fuel
+	:
+	  inc &spaceship_y # move the spaceship downwards
+
+      if key.is_defined:
 	sleep t-current_time()
+	case key
+	  'w', 'j':
+	    if fuel >= 3:
+	      dec &spaceship_y # move the spaceship upwards
+	      minus &fuel 3
+	  's', 'n':
+	    if fuel >= 3:
+	      inc &spaceship_y # move the spaceship downwards
+	      minus &fuel 3
+	  'a', 'v':
+	    if spaceship_x > 1 && fuel >= 3:
+	      dec &spaceship_x # move the spaceship backwards
+	      minus &fuel 3
+	  'd', 'b':
+	    if spaceship_x < WIDTH && fuel >= 3:
+	      inc &spaceship_x # move the spaceship forwards
+	      minus &fuel 3
+	  'q': break # the user wants to quit the game
 
-    if
-      fuel > 0:
-	dec &fuel
-      :
-	inc &spaceship_y # move the spaceship downwards
+      # update the view of the cave
 
-    unless input_buffer.is_empty: # are there keys in the backlog buffer?
-      case get(&input_buffer)
-	'w', 'j':
-	  if fuel >= 3:
-	    dec &spaceship_y # move the spaceship upwards
-	    minus &fuel 3
-	's', 'n':
-	  if fuel >= 3:
-	    inc &spaceship_y # move the spaceship downwards
-	    minus &fuel 3
-	'a', 'v':
-	  if spaceship_x > 1 && fuel >= 3:
-	    dec &spaceship_x # move the spaceship backwards
-	    minus &fuel 3
-	'd', 'b':
-	  if spaceship_x < WIDTH && fuel >= 3:
-	    inc &spaceship_x # move the spaceship forwards
-	    minus &fuel 3
-	'q': break # the user wants to quit the game
+      inc &cave_start_x
 
-    # update the view of the cave
+      $distance_to_exit cave_length-cave_draw_x
+      if
+	distance_to_exit >= 0:
+	  if
+	    distance_to_exit > 100:
+	      set_background_colour DARK_GREY
+	    :
+	      $a distance_to_exit
+	      $b 100-a
+	      set_background_colour colour_mixture(DARK_GREY = a SKY_BLUE = b)
+	:
+	  set_background_colour SKY_BLUE
+      scroll_left # scroll the whole cave left by 1 character column
 
-    inc &cave_start_x
+      set_background_colour undefined
 
-    $distance_to_exit cave_length-cave_draw_x
-    if
-      distance_to_exit >= 0:
-	if
-	  distance_to_exit > 100:
-	    set_background_colour DARK_GREY
-	  :
-	    $a distance_to_exit
-	    $b 100-a
-	    set_background_colour colour_mixture(DARK_GREY = a SKY_BLUE = b)
-      :
-	set_background_colour SKY_BLUE
-    scroll_left # scroll the whole cave left by 1 character column
+      if
+	cave_draw_x <= cave_length:
+	  draw_cave_column 80 # draw a new right-most character column
+	:
+	  inc &cave_draw_x
 
-    set_background_colour undefined
+      draw_fuel
 
-    if
-      cave_draw_x <= cave_length:
-	draw_cave_column 80 # draw a new right-most character column
-      :
-	inc &cave_draw_x
+      draw_dynamic_contents
 
-    draw_fuel
+      if hit_an_obstacle() break
 
-    draw_dynamic_contents
+      draw_spaceship # draw the spaceship
 
-    check_for_collision
+      update_terminal # make all updates visible
 
-    draw_spaceship # draw the spaceship
+      undraw_dynamic_contents
+      undraw_spaceship # "undraw" the spaceship
 
-    update_terminal # make all updates visible
+      update_dynamic_contents
 
-    undraw_dynamic_contents
-    undraw_spaceship # "undraw" the spaceship
+      -> cave_draw_x+spaceship_x > cave_length+WIDTH
 
-    update_dynamic_contents
+    draw_message "
+      Congratulations
 
-    -> cave_draw_x+spaceship_x > cave_length+WIDTH
+       You survived!
 
-  draw_message "You survived!"
-  update_terminal
-  sleep 3
+      Press any key to end the game
+    update_terminal
+    get_key $dummy
+    terminate
