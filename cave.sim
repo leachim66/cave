@@ -38,7 +38,7 @@ $LASER_BEAM .
 $type_of (!) # used for dynamic contents
 $symbol_of (!) # used for dynamic contents
 $colour_of (!) # used for dynamic contents
-$frequence_of (!) # used for dynamic contents
+$frequency_of (!) # used for dynamic contents
 $tick_of (!) # used for dynamic contents
 $x_of (!) # used for dynamic contents
 $y_of (!) # used for dynamic contents
@@ -192,7 +192,7 @@ $draw_cave_column:
 	  .dy_of -1
 	  .symbol_of shot
 	  .colour_of YELLOW
-	  .frequence_of
+	  .frequency_of
 	    if
 	      cave_draw_x > 500
 	      -> 10
@@ -280,7 +280,7 @@ $update_dynamic_contents:
 	case type_of(item)
 	  CANNON:
 	    inc &item.tick_of
-	    if tick_of(item) == frequence_of(item):
+	    if tick_of(item) == frequency_of(item):
 	      !item
 		sequence
 		  item(.tick_of 0)
@@ -640,3 +640,5 @@ forever:
     update_terminal
     get_key $dummy
     terminate
+
+$std::dummy2 .
